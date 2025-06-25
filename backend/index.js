@@ -7,14 +7,25 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_KEY,
 });
 
-async function transcribeAudio() {
-  const transcription = await openai.audio.transcriptions.create({
-    file: fs.createReadStream("./audio.m4a"),
-    model: "whisper-1",
-    response_format: "text",
-  });
-  // If response_format is "text", transcription is a string
-  console.log(transcription);
+const stream = await openai.audio.transcriptions.create({
+  file: fs.createReadStream("./audio.m4a"),
+  model: "gpt-4o-mini-transcribe",
+  response_format: "text",
+  stream: true,
+});
+
+for await (const chunk of stream) {
+  console.log(chunk);
 }
 
-transcribeAudio();
+// async function transcribeAudio() {
+//   const transcription = await openai.audio.transcriptions.create({
+//     file: fs.createReadStream("./audio.m4a"),
+//     model: "whisper-1",
+//     response_format: "text",
+//   });
+//   // If response_format is "text", transcription is a string
+//   console.log(transcription);
+// }
+
+// transcribeAudio();
