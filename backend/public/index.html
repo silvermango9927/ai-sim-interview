@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Audio Recorder & Transcriber</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      button {
+        padding: 10px 20px;
+        margin: 10px;
+        font-size: 16px;
+        cursor: pointer;
+      }
+      .recording {
+        background-color: #ff4444;
+        color: white;
+      }
+      .stopped {
+        background-color: #44ff44;
+        color: white;
+      }
+      #transcription {
+        margin-top: 20px;
+        padding: 15px;
+        border: 1px solid #ccc;
+        min-height: 100px;
+      }
+      .status {
+        margin: 10px 0;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Audio Recorder & Transcriber</h1>
+
+    <div>
+      <button id="startBtn">Start Recording</button>
+      <button id="stopBtn" disabled>Stop Recording</button>
+      <button id="transcribeBtn" disabled>Transcribe Audio</button>
+    </div>
+
+    <div id="status" class="status"></div>
+
+    <audio
+      id="audioPlayback"
+      controls
+      style="width: 100%; margin: 20px 0"
+    ></audio>
+
+    <div>
+      <h3>Transcription:</h3>
+      <div id="transcription">No transcription yet...</div>
+    </div>
+
+    <script>
+      let mediaRecorder;
+      let audioChunks = [];
+      let audioBlob;
+
+      const startBtn = document.getElementById("startBtn");
+      const stopBtn = document.getElementById("stopBtn");
+      const transcribeBtn = document.getElementById("transcribeBtn");
+      const status = document.getElementById("status");
+      const audioPlayback = document.getElementById("audioPlayback");
+      const transcriptionDiv = document.getElementById("transcription");
+
+      startBtn.addEventListener("click", startRecording);
+      stopBtn.addEventListener("click", stopRecording);
+      transcribeBtn.addEventListener("click", transcribeAudio);
+
+      async function startRecording() {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              channelCount: 1,
+              sampleRate: 16000,
+              sampleSize: 16,
+              echoCancellation: true,
+              noiseSuppression: true,
+            },
+          });
+
+          // Try different MIME types for better compatibility
+          const options = [
+            { mimeType: "audio/webm;codecs=opus" },
+            { mimeType: "audio/webm" },
+            { mimeType: "audio/mp4" },
+            { mimeType: "audio/wav" },
+          ];
+
+          let selectedOption = {};
+          for (const option of options) {
+            if (MediaRecorder.isTypeSupported(option.mimeType)) {
+              selectedOption = option;
+              console.log("Using MIME type:", option.mimeType);
+              break;
+            }
+          }
+
+          mediaRecorder = new MediaRecorder(stream, selectedOption);
+          audioChunks = [];
+
+          mediaRecorder.ondataavailable = (event) => {
+            audioChunks.push(event.data);
+          };
+
+          mediaRecorder.onstop = () => {
+            const mimeType = mediaRecorder.mimeType || "audio/webm";
+            audioBlob = new Blob(audioChunks, { type: mimeType });
+            const audioUrl = URL.createObjectURL(audioBlob);
+            audioPlayback.src = audioUrl;
+            transcribeBtn.disabled = false;
+            status.textContent =
+              "Recording stopped. You can now transcribe the audio.";
+          };
+
+          mediaRecorder.start();
+          startBtn.disabled = true;
+          stopBtn.disabled = false;
+          startBtn.classList.add("recording");
+          status.textContent = "Recording... Click stop when finished.";
+        } catch (error) {
+          console.error("Error accessing microphone:", error);
+          status.textContent =
+            "Error: Could not access microphone. Please allow microphone permissions.";
+        }
+      }
+
+      function stopRecording() {
+        mediaRecorder.stop();
+        mediaRecorder.stream.getTracks().forEach((track) => track.stop());
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        startBtn.classList.remove("recording");
+      }
+
+      async function transcribeAudio() {
+        if (!audioBlob) {
+          status.textContent = "No audio recorded!";
+          return;
+        }
+
+        status.textContent = "Transcribing audio...";
+        transcribeBtn.disabled = true;
+
+        const formData = new FormData();
+        // Give the blob a proper filename with extension
+        const filename = `recording.${
+          audioBlob.type.includes("webm") ? "webm" : "wav"
+        }`;
+        formData.append("audio", audioBlob, filename);
+
+        try {
+          const response = await fetch("http://localhost:3001/upload-audio", {
+            method: "POST",
+            body: formData,
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            transcriptionDiv.textContent = result.transcription;
+            status.textContent = "Transcription completed!";
+          } else {
+            throw new Error(result.error || "Transcription failed");
+          }
+        } catch (error) {
+          console.error("Error transcribing audio:", error);
+          status.textContent = `Error: ${error.message}`;
+          transcriptionDiv.textContent = "Transcription failed.";
+        } finally {
+          transcribeBtn.disabled = false;
+        }
+      }
+    </script>
+  </body>
+</html>
